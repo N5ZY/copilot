@@ -1,199 +1,80 @@
 # N5ZY VHF Contest Co-Pilot
 
-AI-powered assistant for VHF contest rover operations.
+VHF/UHF contest automation for amateur radio rovers. Handles the tedious stuff so you can focus on making contacts.
 
-## Features (Tier 1 - January Contest Ready)
+**Version 1.8.31** | February 2026
 
-✅ **GPS Integration**
-- Automatically monitors GPS and calculates Maidenhead grid square
-- Updates all WSJT-X instances and N1MM+ when grid changes
-- Voice announcements on grid crossings
+## Features
 
-✅ **Battery Monitoring**
-- Real-time Victron SmartShunt monitoring via Bluetooth
-- Voltage display with color-coded warnings
-- Low battery alerts
+### Core Automation
+- **Automatic Grid Updates** - GPS tracks your position and updates WSJT-X + N1MM+/N3FJP when you cross grid boundaries
+- **Reliable QSO Relay** - Queues QSOs from up to 4 WSJT-X instances to your contest logger with retry logic
+- **Battery Monitoring** - Victron SmartShunt integration showing voltage, current, and state of charge
+- **Voice Announcements** - Hands-free alerts for grid changes, QSOs logged, GPS lock status
 
-✅ **WSJT-X Log Monitoring**
-- Tracks worked grids per band
-- Alerts on new grid multipliers
-- Identifies stations calling you
-- Reloads contest logs on startup
+### Situational Awareness
+- **PSK Reporter Monitor** - Detects Sporadic-E, multi-hop E, and tropo openings in your area
+- **QSY Advisor** - Database of 788 stations showing what bands they operate (built from ARRL public logs)
+- **APRS-IS Integration** - Beacon your position and get alerts when other mobiles are nearby
 
-✅ **Voice Alerts**
-- Text-to-speech announcements for important events
-- Grid changes, new grids, stations calling
+### Specialized Tools
+- **Manual Entry** - Log phone/CW contacts with grid or county exchange
+- **Grid Corner Tracker** - Track QSOs with other rovers at grid corners (the "grid dance")
+- **Slack Notifications** - Auto-post grid activations to Slack channels
 
-✅ **Manual Entry**
-- Log phone/CW contacts to N1MM+
-- Band, frequency, call, and grid entry
+## Quick Start
 
-## Installation
+### 1. Install Python 3.10+
+Download from [python.org](https://www.python.org/downloads/). During install, check **"Add Python to PATH"**.
 
-### 1. Install Python Dependencies
+### 2. Install Dependencies
+Double-click **`install_dependencies.bat`**
 
-```bash
-pip install -r requirements.txt
-```
+### 3. Run the App
+Double-click **`run.bat`**
 
-**Note**: On Windows, `tkinter` is included with Python. If you get tkinter errors, reinstall Python with "tcl/tk and IDLE" enabled.
+### 4. Configure Settings
+1. Go to the **Settings** tab
+2. Enter your **callsign**
+3. Set your **GPS COM port** (e.g., COM3)
+4. Configure **WSJT-X instances** (name, log path, UDP port)
+5. Select your **bands** under "My Bands"
+6. Click **Save Settings**
 
-### 2. Install GPS Time Sync Software
+## Hardware
 
-Keep your existing GPS time sync software running on one GPS dongle (e.g., COM2).
+| Item | Purpose | Notes |
+|------|---------|-------|
+| USB GPS Dongle | Grid tracking | Any NMEA-compatible (e.g., VK-172, ~$12) |
+| Victron SmartShunt | Battery monitoring | Optional but recommended |
 
-### 3. Configure Victron SmartShunt
+## Documentation
 
-1. Open VictronConnect app on your phone
-2. Connect to your SmartShunt
-3. Go to Settings → Product Info
-4. Enable "Instant Readout via Bluetooth"
-5. Note the Bluetooth address and encryption key
-
-## Configuration
-
-### First Run
-
-1. Launch the application:
-   ```bash
-   python copilot.py
-   ```
-
-2. Go to the **Settings** tab
-
-3. Configure:
-   - **GPS COM Port**: Set to your second GPS dongle (e.g., COM3)
-   - **Victron BLE Address**: Enter from VictronConnect app
-   - **Victron Encryption Key**: Enter from VictronConnect app
-   - **WSJT-X Log Paths**: Browse to each WSJT-X instance's log folder
-     - Example: `C:\Users\Marcus\AppData\Local\WSJT-X\6m\`
-
-4. Click **Save Settings**
-
-### WSJT-X Setup
-
-For each WSJT-X instance:
-1. Open WSJT-X
-2. Go to Settings → Reporting
-3. Enable "Accept UDP requests"
-4. Note the UDP Server port (default: 2237)
-   - If running multiple instances, each needs a unique port:
-     - 6m instance: 2237
-     - 2m instance: 2238
-     - 222/902 instance: 2239
-
-5. Update the Co-Pilot settings with these port numbers
-
-### N1MM+ Setup
-
-1. Open N1MM+
-2. Go to Config → Configure Ports, Mode Control...
-3. Enable "Broadcast data" on UDP port 12060 (default)
-
-## Usage
-
-### Normal Contest Operation
-
-1. **Start Co-Pilot FIRST**
-   - This ensures logs are loaded before contest starts
-
-2. **Start WSJT-X instances**
-   - 6m (always on)
-   - 2m (usually on)
-   - 222/902 (as needed)
-
-3. **Start N1MM+**
-
-4. **Drive and operate!**
-   - Co-Pilot will:
-     - Announce grid changes
-     - Update WSJT-X and N1MM+ automatically
-     - Alert you to new grids
-     - Alert when stations call you
-     - Monitor battery voltage
-
-### Manual Entry (Phone/CW)
-
-1. Go to **Manual Entry** tab
-2. Select band
-3. Enter frequency, callsign, and grid
-4. Click "Log to N1MM"
-
-### Test Mode
-
-Before the contest, use **Test Mode** tab to:
-- Test grid updates to WSJT-X/N1MM
-- Test voice announcements
-- Test Victron connection
-- Reload logs
-
-## Troubleshooting
-
-### GPS Not Working
-
-- Verify COM port in Device Manager
-- Check GPS dongle has power (should have LED)
-- Try unplugging and replugging GPS
-- Check Settings tab shows correct COM port
-
-### Victron Not Connecting
-
-- Click "Discover Devices" in Settings to find your SmartShunt
-- Verify encryption key is correct
-- Ensure SmartShunt is within Bluetooth range (~30 feet)
-- Check SmartShunt battery is connected and powered
-
-### WSJT-X Not Updating
-
-- Verify "Accept UDP requests" is enabled in WSJT-X
-- Check port numbers match in Settings
-- Try "Force Grid Update" button
-- Restart WSJT-X and Co-Pilot
-
-### No Voice Announcements
-
-- Check Windows audio isn't muted
-- Test voice with "Test Voice Announcement" button
-- Windows may need to install speech synthesis voices
-
-### WSJT-X Logs Not Being Monitored
-
-- Verify log path points to correct directory
-- Check directory contains ALL.TXT file
-- Click "Reload WSJT-X Logs" in Test Mode
-- Path should be instance-specific directory, not shared
-
-## File Locations
-
-- **Config**: `config/settings.json`
-- **Logs**: `logs/` (application logs)
-
-## Contest Day Checklist
-
-- [ ] GPS dongle connected (dedicated one for Co-Pilot)
-- [ ] Victron SmartShunt paired and in range
-- [ ] Co-Pilot started and GPS shows valid grid
-- [ ] WSJT-X instances started and accepting UDP
-- [ ] N1MM+ started and broadcasting
-- [ ] Test grid update works
-- [ ] Voice announcements working
-- [ ] Battery voltage showing correctly
-
-## Known Limitations (January Contest)
-
-- Manual grid square tracking only (no dynamic multiplier analysis yet)
-- PSK Reporter monitoring not implemented
-- SMS notifications not implemented  
-- APRS integration not implemented
-- Social media posting not implemented
-
-These features are planned for June/September contests!
+- [Battery Setup Guide](BATTERY_SETUP_GUIDE.md)
+- [N1MM+ RoverQTH Guide](N1MM_ROVERQTH_GUIDE.md)
+- [QSO Logging Relay](QSO_LOGGING_RELAY.md)
+- [QSY Advisor Guide](QSY_ADVISOR_GUIDE.md)
 
 ## Support
 
-For issues during contest prep:
-- Check this README
-- Use Test Mode to diagnose
-- All modules log to console for debugging
+- **Documentation & Blog**: [n5zy.org/copilot](https://n5zy.org/copilot)
+- **Community Forum**: [groups.io/g/n5zy-copilot](https://groups.io/g/n5zy-copilot)
+- **Issues**: Use GitHub Issues
 
-73 and good luck in the contest!
+## Contributing
+
+Pull requests welcome! This project was developed with assistance from Claude (Anthropic).
+
+## License
+
+MIT License - See [LICENSE](LICENSE)
+
+## Donate
+
+If this tool helps your rover operation, consider supporting development:
+
+[PayPal.me/n5zy](https://paypal.me/n5zy)
+
+---
+
+73 de N5ZY 📻
