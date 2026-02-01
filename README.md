@@ -28,10 +28,12 @@ VHF/UHF contest automation for amateur radio rovers. Handles the tedious stuff s
 Download from [python.org](https://www.python.org/downloads/). During install, check **"Add Python to PATH"**.
 
 ### 2. Install Dependencies
+In Windows, create a new folder such as c:\n5zy-copilot and download all these file to that folder.
 Double-click **`install_dependencies.bat`**
 
 ### 3. Run the App
 Double-click **`run.bat`**
+(make a folder on your desktop and create a shortcut to this file in that folder, along with a shortcut to your N1MM and GPS Clock app and shortcuts to your verious WSJT profiles)
 
 ### 4. Configure Settings
 1. Go to the **Settings** tab
