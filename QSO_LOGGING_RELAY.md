@@ -12,6 +12,14 @@ This solves TWO problems:
 1. N1MM+ only supporting 2 WSJT-X listeners when you run 3+ instances
 2. Race conditions when multiple WSJT-X instances log QSOs at the same moment
 
+## N1MM+ Version Requirement
+
+**Minimum Version: 1.0.11082.0 (January 20, 2026)**
+
+This version added UDP support for RoverQTH updates. Earlier versions won't receive grid updates properly.
+
+Download latest: [n1mmplus.hamdocs.com](https://n1mmplus.hamdocs.com/)
+
 ---
 
 ## The Race Condition Problem (Why GridTracker2 Failed)

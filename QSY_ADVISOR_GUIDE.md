@@ -1,60 +1,75 @@
-# QSY Advisor - Multi-Band Station Tracking
+# QSY Advisor - Multi-Band Station Database
 
-The QSY Advisor tracks which bands stations have operated in past VHF contests. When you work a station, it checks if they operate on other bands and alerts you to request a QSY.
+The QSY Advisor is a searchable database of VHF/UHF stations showing which bands they operate. Use it to identify QSY opportunities and plan contest strategy.
 
-## How It Works
+## Features
 
-1. **Station Database** - Contains historical data on which bands stations operate
-2. **QSO Tracking** - When you log a QSO, the advisor checks the database
-3. **Voice Alert** - If the station has other bands you haven't worked them on, you get a voice alert
+- **788 stations** pre-loaded from ARRL public logs
+- **Searchable** by callsign, grid, or minimum band count
+- **Click to lookup** on QRZ.com
+- **Distance and bearing** from your current position
+- **Fetch updates** from ARRL when new contest results are published
 
-### Example
+## Using the QSY Advisor Tab
 
-You work K5QE on 2m via FT8. The advisor knows K5QE operates on 6m, 2m, 222, 70cm, 33cm, 23cm, and up. Since you haven't worked them on those other bands in this contest, you hear:
+### Search & Filter
 
-> "QSY opportunity. K5QE also has 6m, 70cm, and 23cm"
+- **Callsign**: Search for specific stations (e.g., "K5" finds all K5 calls)
+- **Grid**: Filter by grid square (e.g., "EM" shows all EM grids)
+- **Min Bands**: Show only stations with 2+, 3+, etc. bands
 
-This reminds you to call them on SSB and ask if they can QSY to other bands!
+### Station List
 
-## Populating the Database
+| Column | Description |
+|--------|-------------|
+| Callsign | Click to open QRZ.com lookup |
+| Bands | List of bands operated (6m, 2m, 70cm, etc.) |
+| Grids | Grid squares they've operated from |
+| # Bands | Total band count |
+| Dist (mi) | Distance from your current GPS position |
+| Dir | Compass direction to the station |
+| Last Seen | Most recent contest appearance |
 
-### Method 1: Import Your Own Logs
+### Pre-Contest Planning
 
-The best source is your own past contest logs. After each contest, import your Cabrillo file:
+1. Filter by grids you'll be activating
+2. Sort by band count to find multi-band stations
+3. Click callsigns to look up on QRZ
+4. Reach out via email to coordinate schedules
+5. Focus on high-band operators (23cm, 10GHz) for maximum points
+
+### During Contest
+
+When you work a station, check the QSY Advisor to see if they have other bands. Ask them to QSY!
+
+## Updating the Database
+
+### Fetch ARRL Logs
+
+Click **"Fetch ARRL Logs"** to download public logs from:
+- January VHF Contest
+- June VHF Contest  
+- September VHF Contest
+- 222 MHz and Up Distance Contest
+
+**Note:** Only refresh when ARRL publishes new contest results, typically a few weeks before the next contest.
+
+The database date is shown below the search bar.
+
+### Add Stations Manually
+
+Click **"Add Station"** to add a station you know about:
+- Enter callsign
+- Select bands they operate
+- Enter their grid square
+
+### Import Cabrillo Logs
+
+Use the command-line tool to import your own contest logs:
 
 ```bash
 cd tools
-python import_cabrillo.py "C:\Users\Marcus\Documents\N1MM Logger+\ExportFiles\n5zy_janvhf2025.log"
-```
-
-This extracts every station you worked and which bands they were on.
-
-### Method 2: Manual Entry
-
-Add stations directly via Python:
-
-```python
-from modules.qsy_advisor import QSYAdvisor
-
-advisor = QSYAdvisor()
-advisor.add_station('K5QE', ['50', '144', '222', '432', '902', '1296'], 'EM31', 'Jan 2025')
-advisor.add_station('W5ZN', ['50', '144', '432', '1296'], 'EM35', 'Sep 2025')
-```
-
-### Method 3: Edit JSON Directly
-
-The database is stored in `data/station_bands.json`:
-
-```json
-{
-  "K5QE": {
-    "bands": ["50", "144", "222", "432", "902", "1296"],
-    "grids": ["EM31"],
-    "last_seen": "2025-01",
-    "contests": ["Jan 2025"],
-    "notes": "East Texas superstation"
-  }
-}
+python import_cabrillo.py "path/to/your_contest.log"
 ```
 
 ## Band Codes
@@ -69,32 +84,26 @@ The database is stored in `data/station_bands.json`:
 | 1296 | 23cm |
 | 2304 | 13cm |
 | 3456 | 9cm |
-| 5760 | 6cm |
+| 5760 | 5cm |
 | 10368 | 3cm |
 
-## Getting Data from 3830scores.com
+## Database File
 
-1. Go to https://www.3830scores.com/contests.php
-2. Click "ARRL January VHF Contest" (or June/September)
-3. Select a recent year (e.g., "2025")
-4. Look for "Band Breakdowns" or individual score pages
-5. Note which stations operated multiple bands
-6. Add them to your database
+Station data is stored in:
+```
+data/station_bands.json
+```
 
-## During the Contest
-
-- QSY suggestions only appear for stations **in the database**
-- You only get alerted once per station/band combination per contest
-- The alert includes up to 3 bands to keep it short
-- Use the info to ask: "Do you have 70cm?" or "QSY to 23cm?"
+This file is included with the distribution and can be updated via the Fetch ARRL Logs feature.
 
 ## Tips
 
-1. **Focus on your region** - Stations in EM grids are most useful for you
-2. **Big stations matter most** - K5QE, W5LUA etc. are worth tracking
-3. **Rovers are valuable** - They often have many bands and move around
-4. **Update after each contest** - Import your log to build the database
+1. **Sort by # Bands** to find the most capable stations
+2. **Filter by nearby grids** to find stations in your target area
+3. **High-band stations** (23cm+) are rare and valuable - prioritize them
+4. **Rovers** often have many bands - look for "/R" calls
+5. **Pre-contest outreach** via QRZ email can set up valuable schedules
 
-## Current Database
+---
 
-The starter database includes ~20 known multi-band stations in the TX/OK region. Import your past logs to add more!
+73 de N5ZY
