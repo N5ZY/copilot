@@ -26,6 +26,7 @@ from modules.qsoparty_parser import (
     get_county_list_for_display,
     get_canonical_county
 )
+from modules.county_lookup import CountyLookupService
 
 # Contest mode constants
 CONTEST_MODES = {
@@ -67,6 +68,10 @@ class CoPilotApp:
         # Current state
         self.current_grid = "----"
         self.current_county = ""  # For QSO Party mode (abbreviation sent to N1MM+)
+        self.current_lat = None   # GPS latitude for ADIF stamping
+        self.current_lon = None   # GPS longitude for ADIF stamping
+        self.current_county_info = None  # Full CountyInfo from shapefile lookup
+        self._last_county_name = ""      # For detecting county changes
         self.battery_voltage = 0.0
         self.battery_current = 0.0
         self.battery_soc = 100.0
@@ -74,6 +79,10 @@ class CoPilotApp:
         # QSO Party data (loaded from N1MM+ QSOParty.sec file)
         self.qso_parties = {}
         self._load_qsoparty_data()
+        
+        # County lookup service (for QSO Party mode auto-detection)
+        self.county_lookup = None
+        self._load_county_shapefile()
         
         # Ignore list for "calling me" alerts: {callsign: expire_timestamp}
         self.ignored_stations = {}
@@ -108,6 +117,8 @@ class CoPilotApp:
                 'qso_party_code': 'OK',  # QSO party code (e.g., OK, TX, 7QP, MAQP)
                 'qso_party_county': '',  # Current county abbreviation
                 'qsoparty_file': get_default_qsoparty_path(),  # N1MM+ QSOParty.sec file
+                'county_shapefile': 'data/us_counties_10m.shp',  # US county boundaries shapefile
+                'county_auto_detect': True,  # Auto-detect county from GPS in QSO Party mode
                 'wsjt_instances': [
                     {'name': 'IC-7610 (6m/HF)', 'log_path': '', 'udp_port': 2237},
                     {'name': 'IC-9700 (2m/70cm/23cm/10G)', 'log_path': '', 'udp_port': 2238},
@@ -137,6 +148,42 @@ class CoPilotApp:
         self.qso_parties = parse_qsoparty_file(filepath)
         if self.qso_parties:
             print(f"Loaded {len(self.qso_parties)} QSO parties")
+    
+    def _load_county_shapefile(self):
+        """Load county boundaries shapefile for QSO Party auto-detection"""
+        shapefile_path = self.config.get('county_shapefile', 'data/us_counties_10m.shp')
+        
+        print(f"County Lookup: Looking for shapefile at: {shapefile_path}")
+        
+        if not Path(shapefile_path).exists():
+            print(f"  ERROR: Shapefile not found!")
+            print(f"  Full path: {Path(shapefile_path).absolute()}")
+            print("  Auto county detection will be disabled.")
+            self.county_lookup = None
+            return
+        
+        try:
+            from modules.county_lookup import CountyLookupService
+            self.county_lookup = CountyLookupService()
+            self.county_lookup.load_shapefile(shapefile_path)
+            print(f"  SUCCESS: Loaded {self.county_lookup.county_count} counties")
+            
+            # Test lookup with Oklahoma City coordinates
+            test_info = self.county_lookup.lookup(35.4676, -97.5164)
+            if test_info:
+                print(f"  Test lookup (OKC): {test_info.name}, {test_info.state_abbrev} ✓")
+            else:
+                print(f"  Test lookup (OKC): FAILED - no result")
+                
+        except ImportError as e:
+            print(f"  ERROR: Missing dependency - {e}")
+            print("  Run: pip install pyshp shapely")
+            self.county_lookup = None
+        except Exception as e:
+            print(f"  ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+            self.county_lookup = None
     
     def _grid_to_latlon(self, grid):
         """Convert Maidenhead grid to lat/lon (center of grid)"""
@@ -511,6 +558,24 @@ class CoPilotApp:
         self.county_display_var = tk.StringVar(value="----")
         ttk.Label(self.qso_party_frame, textvariable=self.county_display_var, 
                  font=('TkDefaultFont', 10, 'bold')).grid(row=3, column=1, sticky=tk.W, pady=2, padx=5)
+        
+        # Auto-detect county from GPS checkbox
+        self.county_auto_detect_var = tk.BooleanVar(value=self.config.get('county_auto_detect', True))
+        auto_detect_cb = ttk.Checkbutton(self.qso_party_frame, text="Auto-detect county from GPS",
+                                         variable=self.county_auto_detect_var,
+                                         command=self._on_county_auto_detect_change)
+        auto_detect_cb.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(5, 2))
+        
+        # Status of county shapefile
+        shapefile_path = self.config.get('county_shapefile', 'data/us_counties_10m.shp')
+        if self.county_lookup and self.county_lookup.is_loaded:
+            shapefile_status = f"✓ {self.county_lookup.county_count} counties loaded"
+            status_color = "green"
+        else:
+            shapefile_status = f"✗ Shapefile not found: {shapefile_path}"
+            status_color = "red"
+        ttk.Label(self.qso_party_frame, text=shapefile_status, 
+                 foreground=status_color).grid(row=5, column=0, columnspan=3, sticky=tk.W, pady=2)
         
         # Initialize county list for current QSO party
         self._update_county_list()
@@ -2071,6 +2136,8 @@ class CoPilotApp:
         # Send to logger via the radio updater's relay queue (same as Manual Entry)
         if self.radio_updater:
             self.radio_updater.queue_qso_for_relay(qso_data)
+            # Stamp GPS location data for LoTW before writing ADIF
+            self._stamp_qso_location(qso_data)
             self.radio_updater._write_qso_to_adif(qso_data)
         
         # Update QSO display on main tab
@@ -2917,7 +2984,7 @@ class CoPilotApp:
                 )
                 self.battery_monitor.start()
             
-            # Initialize radio updater with QSO callback
+            # Initialize radio updater with QSO callback and location stamper
             self.radio_updater = RadioUpdater(
                 self.config['wsjt_instances'],
                 n1mm_host=self.config.get('n1mm_udp_host', '127.0.0.1'),
@@ -2925,7 +2992,8 @@ class CoPilotApp:
                 n3fjp_host=self.config.get('n3fjp_host', '127.0.0.1'),
                 n3fjp_port=self.config.get('n3fjp_port', 1100),
                 contest_logger=self.config.get('contest_logger', 'n1mm'),
-                qso_callback=self.on_qso_logged
+                qso_callback=self.on_qso_logged,
+                location_stamper=self._stamp_qso_location
             )
             
             # Start log monitoring
@@ -2949,6 +3017,10 @@ class CoPilotApp:
     
     def on_gps_update(self, grid, lat, lon):
         """Called when GPS position updates"""
+        # Store current position for ADIF stamping
+        self.current_lat = lat
+        self.current_lon = lon
+        
         # Always update APRS position (even if grid hasn't changed)
         if hasattr(self, 'aprs_client') and self.aprs_client:
             self.aprs_client.set_position(lat, lon, grid)
@@ -2993,6 +3065,156 @@ class CoPilotApp:
             else:
                 self.voice.announce(f"Current grid is {grid}")
                 self.add_alert(f"GPS acquired. Current grid: {grid}")
+        
+        # Auto-detect county in QSO Party mode
+        self._check_county_change(lat, lon)
+    
+    def _check_county_change(self, lat, lon):
+        """Check if we've crossed into a new county. Updates for ALL modes (ADIF stamping)."""
+        if not self.county_lookup or not self.county_lookup.is_loaded:
+            return
+        
+        # Look up county from GPS coordinates
+        county_info = self.county_lookup.lookup(lat, lon)
+        
+        if not county_info:
+            return
+        
+        # Store for ADIF stamping (works in ALL modes)
+        self.current_county_info = county_info
+        
+        # Check if county name changed (for ADIF stamping display)
+        if county_info.name != getattr(self, '_last_county_name', ''):
+            old_county = getattr(self, '_last_county_name', '')
+            self._last_county_name = county_info.name
+            
+            # Update status bar county display if it exists
+            if hasattr(self, 'county_label'):
+                self.county_label.config(text=f"{county_info.name}, {county_info.state_abbrev}")
+            
+            # Log county changes (only when actually changed)
+            if old_county:
+                print(f"County: {old_county} → {county_info.name}, {county_info.state_abbrev}")
+        
+        # === QSO Party Mode: Additional handling ===
+        if self.config.get('contest_mode') != 'qso_party':
+            return
+        if not self.config.get('county_auto_detect', True):
+            return
+        
+        # Get the QSO Party code and check if this county is in it
+        party_code = self.config.get('qso_party_code', '').upper()
+        if not party_code or party_code not in self.qso_parties:
+            return
+        
+        party_data = self.qso_parties[party_code]
+        
+        # Try to map FIPS code to QSO Party abbreviation
+        county_abbrev = self._fips_to_qsoparty_abbrev(county_info.fips, county_info.name, party_data)
+        
+        if not county_abbrev:
+            return
+        
+        # Check if county changed
+        if county_abbrev != self.current_county:
+            old_county = self.current_county
+            self.current_county = county_abbrev
+            self.config['qso_party_county'] = county_abbrev
+            
+            # Update displays
+            if hasattr(self, 'county_display_var'):
+                self.county_display_var.set(county_abbrev)
+            if hasattr(self, 'county_label'):
+                self.county_label.config(text=county_abbrev)
+            if hasattr(self, 'qso_party_county_var'):
+                self.qso_party_county_var.set(county_abbrev)
+            
+            # Update logger button (in QSO Party mode shows county)
+            logger = self.config.get('contest_logger', 'n1mm')
+            logger_name = "N1MM+" if logger == 'n1mm' else "N3FJP"
+            self.logger_button.config(text=f"Send to {logger_name}: {county_abbrev}", state='normal')
+            
+            # Send to N1MM+ via RoverQTH
+            if hasattr(self, 'radio_updater') and self.radio_updater:
+                self.radio_updater.send_n1mm_roverqth_county(county_abbrev)
+            
+            # Voice announcement
+            if old_county:
+                self.voice.announce(f"County change. Now in {county_info.contest_name}")
+                self.add_alert(f"COUNTY CHANGE: {old_county} → {county_abbrev} ({county_info.contest_name})")
+            else:
+                self.voice.announce(f"Current county is {county_info.contest_name}")
+                self.add_alert(f"County detected: {county_abbrev} ({county_info.contest_name})")
+            
+            # Update Manual Entry "My County" field
+            if hasattr(self, 'manual_mygrid_var'):
+                self.manual_mygrid_var.set(county_abbrev)
+    
+    def _fips_to_qsoparty_abbrev(self, fips, county_name, party_data):
+        """Convert FIPS code or county name to QSO Party county abbreviation"""
+        # Get state abbreviation - try party_data first, then derive from party code
+        state_abbrev = party_data.get('state', '')
+        if not state_abbrev:
+            state_abbrev = self.config.get('qso_party_code', '').upper()
+        
+        # Try to load a FIPS mapping file (e.g., OK.json)
+        fips_map_path = Path(f"data/county_mappings/{state_abbrev}.json")
+        
+        if fips_map_path.exists():
+            try:
+                import json
+                with open(fips_map_path) as f:
+                    fips_map = json.load(f)
+                
+                if fips in fips_map:
+                    return fips_map[fips].get('code')
+                    
+                # Fallback: try name matching from JSON
+                for fips_code, entry in fips_map.items():
+                    if entry.get('name', '').upper() == county_name.upper():
+                        return entry.get('code')
+            except Exception as e:
+                print(f"County mapping error: {e}")
+        
+        return None
+    
+    def _stamp_qso_location(self, qso_data):
+        """
+        Stamp GPS-derived location data onto a QSO for ADIF export.
+        
+        Adds MY_STATE, MY_CNTY, MY_LAT, MY_LON, MY_CQ_ZONE, MY_ITU_ZONE, MY_DXCC
+        for proper LoTW upload via Log4OM.
+        """
+        # Use current GPS position
+        lat = self.current_lat
+        lon = self.current_lon
+        
+        # Add lat/lon in ADIF format
+        if lat is not None and lon is not None:
+            from modules.radio_updater import RadioUpdater
+            qso_data['my_lat'] = RadioUpdater.to_adif_latitude(lat)
+            qso_data['my_lon'] = RadioUpdater.to_adif_longitude(lon)
+            
+            # Use cached county info (updated on every GPS reading)
+            county_info = getattr(self, 'current_county_info', None)
+            if county_info:
+                qso_data['my_state'] = county_info.state_abbrev
+                qso_data['my_county'] = county_info.contest_name
+            else:
+                # Fallback: try fresh lookup
+                if self.county_lookup and self.county_lookup.is_loaded:
+                    county_info = self.county_lookup.lookup(lat, lon)
+                    if county_info:
+                        qso_data['my_state'] = county_info.state_abbrev
+                        qso_data['my_county'] = county_info.contest_name
+        
+        # Default US station values (can be overridden in config later)
+        qso_data.setdefault('my_country', 'United States')
+        qso_data.setdefault('my_cq_zone', '4')   # Central US
+        qso_data.setdefault('my_itu_zone', '7')  # Central US  
+        qso_data.setdefault('my_dxcc', '291')    # USA
+        
+        return qso_data
     
     def on_gps_lock_change(self, has_lock, message):
         """Called when GPS lock status changes"""
@@ -3213,11 +3435,17 @@ class CoPilotApp:
             self.config['grid_precision'] = 4  # Still use 4-char for WSJT-X
         
         self.save_config()
-        self._update_contest_mode_ui()
         
         # Update GPS monitor precision if running
         if hasattr(self, 'gps_monitor') and self.gps_monitor:
             self.gps_monitor.set_precision(self.config['grid_precision'])
+        
+        # If switching TO QSO Party mode, trigger county lookup BEFORE updating UI
+        if mode_key == 'qso_party' and self.current_lat is not None and self.current_lon is not None:
+            self._check_county_change(self.current_lat, self.current_lon)
+        
+        # Now update UI (button text will reflect county if in QSO Party mode)
+        self._update_contest_mode_ui()
         
         self.add_alert(f"Contest mode: {CONTEST_MODES[mode_key]}")
         print(f"Contest Mode: Changed to {mode_key}, grid precision = {self.config['grid_precision']}")
@@ -3225,6 +3453,8 @@ class CoPilotApp:
     def _update_contest_mode_ui(self):
         """Update UI elements based on current contest mode"""
         mode = self.config.get('contest_mode', 'vhf')
+        logger = self.config.get('contest_logger', 'n1mm')
+        logger_name = "N1MM+" if logger == 'n1mm' else "N3FJP"
         
         # Update grid precision display
         precision = self.config.get('grid_precision', 4)
@@ -3232,13 +3462,19 @@ class CoPilotApp:
         
         # Show/hide QSO party settings and county display
         # Also hide QSO party if using N3FJP (different apps per party)
-        logger = self.config.get('contest_logger', 'n1mm')
         if mode == 'qso_party' and logger == 'n1mm':
             self.qso_party_frame.grid()
             self.county_frame.pack(side=tk.LEFT, padx=10)  # Show county in top bar
+            # Button shows county in QSO Party mode
+            county = self.current_county or self.config.get('qso_party_county', '')
+            if county:
+                self.logger_button.config(text=f"Send to {logger_name}: {county}")
         else:
             self.qso_party_frame.grid_remove()
             self.county_frame.pack_forget()  # Hide county in top bar
+            # Button shows grid in VHF/222 modes
+            grid = self.current_grid if self.current_grid != "----" else "----"
+            self.logger_button.config(text=f"Send to {logger_name}: {grid}")
         
         # Update Manual Entry labels based on mode
         self._update_manual_entry_labels()
@@ -3380,7 +3616,27 @@ class CoPilotApp:
         self._update_county_list()
         self.county_display_var.set("----")
         
+        # Clear county name cache to rebuild for new party
+        if hasattr(self, '_county_name_cache'):
+            self._county_name_cache.clear()
+        
         print(f"QSO Party: Changed to {party_code}")
+    
+    def _on_county_auto_detect_change(self):
+        """Handle county auto-detect checkbox change"""
+        enabled = self.county_auto_detect_var.get()
+        self.config['county_auto_detect'] = enabled
+        self.save_config()
+        
+        if enabled:
+            self.add_alert("County auto-detection enabled")
+            if self.county_lookup and self.county_lookup.is_loaded:
+                self.voice.announce("County auto detection enabled")
+            else:
+                self.add_alert("Warning: County shapefile not loaded - auto-detect won't work")
+        else:
+            self.add_alert("County auto-detection disabled")
+            self.voice.announce("County auto detection disabled")
     
     def _update_county_list(self):
         """Update county dropdown based on selected QSO party"""
@@ -3781,7 +4037,8 @@ class CoPilotApp:
             n3fjp_host=self.config.get('n3fjp_host', '127.0.0.1'),
             n3fjp_port=self.config.get('n3fjp_port', 1100),
             contest_logger=self.config.get('contest_logger', 'n1mm'),
-            qso_callback=self.on_qso_logged
+            qso_callback=self.on_qso_logged,
+            location_stamper=self._stamp_qso_location
         )
         self.add_alert("Radio updater restarted with new settings")
         
@@ -3874,6 +4131,8 @@ class CoPilotApp:
         
         # Write to ADIF backup
         if self.radio_updater:
+            # Stamp GPS location data for LoTW before writing ADIF
+            self._stamp_qso_location(qso_data)
             self.radio_updater._write_qso_to_adif(qso_data)
         
         # Update QSO display
