@@ -9,6 +9,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import json
 import os
 from pathlib import Path
+import serial.tools.list_ports  # For COM port discovery
 
 # Import our modules (will create these next)
 from modules.gps_monitor import GPSMonitor
@@ -602,7 +603,11 @@ class CoPilotApp:
         
         ttk.Label(gps_frame, text="GPS COM Port:").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.gps_port_var = tk.StringVar(value=self.config['gps_port'])
-        ttk.Entry(gps_frame, textvariable=self.gps_port_var, width=15).grid(row=0, column=1, pady=2)
+        self.gps_port_combo = ttk.Combobox(gps_frame, textvariable=self.gps_port_var, width=45)
+        self.gps_port_combo.grid(row=0, column=1, pady=2, sticky=tk.W)
+        self._refresh_com_ports()  # Populate the dropdown
+        
+        ttk.Button(gps_frame, text="↻", width=3, command=self._refresh_com_ports).grid(row=0, column=2, padx=5)
         
         # Grid boundary alerts toggle
         self.grid_boundary_var = tk.BooleanVar(value=self.config.get('grid_boundary_alerts', False))
@@ -3949,12 +3954,56 @@ class CoPilotApp:
             if url:
                 threading.Thread(target=send_to_webhook, args=(name, url), daemon=True).start()
     
+    def _refresh_com_ports(self):
+        """Scan system for available COM ports and populate dropdown"""
+        ports = []
+        gps_keywords = ['gps', 'gnss', 'u-blox', 'nmea', 'navigation', 'location']
+        
+        for port in serial.tools.list_ports.comports():
+            # Build display string
+            desc = port.description or ''
+            mfr = port.manufacturer or ''
+            
+            # Check if likely a GPS device
+            combined = f"{desc} {mfr}".lower()
+            is_gps = any(kw in combined for kw in gps_keywords)
+            
+            if is_gps:
+                display = f"⭐ {port.device}: {desc}"
+            elif desc and desc != port.device:
+                display = f"{port.device}: {desc}"
+            else:
+                display = port.device
+            
+            ports.append(display)
+        
+        # Sort with GPS devices first
+        ports.sort(key=lambda x: (0 if x.startswith('⭐') else 1, x))
+        
+        # Update combobox
+        self.gps_port_combo['values'] = ports
+        
+        # If current value not in list, keep it (manual entry still works)
+        current = self.gps_port_var.get()
+        if ports and not current:
+            # Auto-select first GPS device if available
+            gps_ports = [p for p in ports if p.startswith('⭐')]
+            if gps_ports:
+                self.gps_port_var.set(gps_ports[0])
+    
     def save_settings(self):
         """Save settings from GUI to config"""
         # Station info
         self.config['my_call'] = self.my_call_var.get().strip().upper()
         
-        self.config['gps_port'] = self.gps_port_var.get()
+        # GPS port - extract just the COM port from display string
+        gps_selection = self.gps_port_var.get()
+        if gps_selection.startswith('⭐ '):
+            gps_selection = gps_selection[2:]  # Remove star
+        if ':' in gps_selection:
+            gps_selection = gps_selection.split(':')[0].strip()  # Get just COM port
+        self.config['gps_port'] = gps_selection
+        
         self.config['victron_address'] = self.victron_addr_var.get()
         self.config['victron_key'] = self.victron_key_var.get()
         
